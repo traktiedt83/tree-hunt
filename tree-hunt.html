@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tree Hunt — Mixed Reality Reading Game</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&display=swap" rel="stylesheet">
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+</script>
+<style>
+  :root{ --ink:#1f2a24; --muted:#5d6b62; --bg:#f3f6f1; --card:#fff; --line:#dbe3d6; --red:#c92a2a; --green:#2b8a3e; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:"Andika",system-ui,sans-serif;color:var(--ink);background:var(--bg)}
+  #menu{max-width:760px;margin:0 auto;padding:28px 20px 60px}
+  h1{font-size:40px;margin:0 0 4px;letter-spacing:-.5px}
+  h1 .r{color:var(--red)} h1 .g{color:var(--green)}
+  .sub{color:var(--muted);margin:0 0 24px;font-size:17px;line-height:1.45}
+  h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:26px 0 10px}
+  .readers{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:560px){.readers{grid-template-columns:1fr}}
+  .reader{background:var(--card);border:2px solid var(--line);border-radius:18px;padding:16px;cursor:pointer;transition:border-color .15s, box-shadow .15s}
+  .reader.sel{border-color:var(--red);box-shadow:0 0 0 4px #c92a2a22}
+  .reader .top{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .badge{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;font-size:18px;flex:none}
+  .reader input,.reader select,.settings select{font:inherit;font-size:17px;padding:8px 10px;border:1.5px solid var(--line);border-radius:10px;width:100%;background:#fff;color:var(--ink)}
+  .reader input{font-weight:700}
+  .reader .info{margin-top:10px;color:var(--muted);font-size:15px}
+  .settings{display:flex;flex-wrap:wrap;gap:12px 22px;align-items:center;background:var(--card);border:2px solid var(--line);border-radius:18px;padding:14px 16px}
+  .settings label{display:flex;align-items:center;gap:8px;font-size:16px}
+  .settings select{width:auto;padding:6px 8px}
+  .settings input[type=checkbox]{width:20px;height:20px;accent-color:var(--red)}
+  .levels{font-size:15px;color:var(--muted);line-height:1.6;margin:10px 2px 0}
+  .play{display:flex;gap:12px;flex-wrap:wrap;margin-top:22px}
+  button{font:inherit;font-weight:700;font-size:18px;border:0;border-radius:14px;padding:14px 22px;cursor:pointer}
+  .primary{background:var(--red);color:#fff}
+  .secondary{background:#fff;color:var(--ink);border:2px solid var(--line)}
+  .small{font-size:15px;padding:8px 14px;border-radius:10px}
+  .note{margin-top:12px;font-size:15px;color:var(--muted);line-height:1.45}
+  .note.warn{color:#a61e4d}
+  details{background:var(--card);border:2px solid var(--line);border-radius:18px;padding:12px 16px;margin-top:12px}
+  summary{cursor:pointer;font-weight:700;font-size:17px}
+  .tabs{display:flex;gap:8px;margin:12px 0 8px}
+  .tab{background:#eef2ea;color:var(--ink)}
+  .tab.on{background:var(--green);color:#fff}
+  textarea{width:100%;min-height:340px;font:15px/1.5 ui-monospace,Menlo,monospace;border:1.5px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)}
+  .edit-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px}
+  .edit-status{font-size:15px;color:var(--muted)}
+  .help{font-size:15px;color:var(--muted);line-height:1.5}
+  .help code{background:#eef2ea;padding:1px 6px;border-radius:6px;font-size:14px}
+  #stage{position:fixed;inset:0;display:none}
+  #stage canvas{display:block;touch-action:none}
+  #stageBar{position:fixed;top:12px;left:12px;right:12px;display:none;justify-content:space-between;align-items:center;gap:12px;pointer-events:none}
+  #stageBar > *{pointer-events:auto}
+  #stageTip{background:#ffffffd9;border-radius:10px;padding:8px 12px;font-size:15px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div id="menu">
+  <h1><span class="g">Tree</span> <span class="r">Hunt</span></h1>
+  <p class="sub">Pick a sparkly ornament and finish the sentence to get a clue. Then use the clue to find the hidden Christmas tree. There are five levels, and each one gets trickier.</p>
+
+  <h2>Who's playing?</h2>
+  <div class="readers" id="readers"></div>
+
+  <h2>Game settings</h2>
+  <div class="settings">
+    <label>Start at
+      <select id="startLevel">
+        <option value="0">Level 1</option><option value="1">Level 2</option><option value="2">Level 3</option><option value="3">Level 4</option><option value="4">Level 5</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="readAloud"> Show "Read it to me" help buttons</label>
+    <label><input type="checkbox" id="music"> Music</label>
+  </div>
+  <div class="levels">
+    <b>Level 1:</b> one big tree &nbsp;·&nbsp; <b>Level 2:</b> two trees, up high or down low &nbsp;·&nbsp;
+    <b>Level 3:</b> pick the tree with the right star &nbsp;·&nbsp; <b>Level 4:</b> three trees, more fakes &nbsp;·&nbsp;
+    <b>Level 5:</b> big or small, and which star?
+  </div>
+
+  <div class="play">
+    <button class="primary" id="btnXR">Play in headset</button>
+    <button class="secondary" id="btnPreview">Preview on this screen</button>
+  </div>
+  <div class="note" id="xrNote"></div>
+
+  <h2>Sentences</h2>
+  <details>
+    <summary>Edit the sentences for each grade</summary>
+    <div class="tabs">
+      <button class="tab small on" data-grade="1">1st grade</button>
+      <button class="tab small" data-grade="2">2nd grade</button>
+    </div>
+    <p class="help">One per line: <code>level | sentence | right answer | wrong, wrong</code><br>
+      The level is 1–5. Use <code>___</code> for the blank, or write a question. Lines starting with <code>#</code> are ignored.<br>
+      Example: <code>2 | We like to play in the ___. | snow | show, slow</code></p>
+    <textarea id="bankText" spellcheck="false"></textarea>
+    <div class="edit-actions">
+      <button class="primary small" id="btnSave">Save sentences</button>
+      <button class="secondary small" id="btnReset">Restore the original sentences</button>
+      <span class="edit-status" id="editStatus"></span>
+    </div>
+  </details>
+</div>
+
+<div id="stage"></div>
+<div id="stageBar">
+  <button class="secondary small" id="btnBack">← Back to menu</button>
+  <div id="stageTip">Drag to look around (trees hide behind you!). Click to pick.</div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ================================================================== */
+/*  Sentences: level | sentence | answer | wrong, wrong                */
+/* ================================================================== */
+const DEFAULT_BANKS = {
+1: `# 1st grade. The level number comes first (1 = easiest).
+1 | The cat is on the ___. | mat | map, man
+1 | I see a big red ___. | hat | hot, had
+1 | The dog can ___. | run | rug, red
+1 | I have a ___ of milk. | cup | cap, pup
+1 | The sun is ___. | hot | hit, hut
+2 | We like to play in the ___. | snow | show, slow
+2 | Santa has a big red ___. | sled | sad, slid
+2 | I can make a snow ___. | man | map, men
+2 | Put on your hat and ___. | coat | goat, boat
+2 | The tree has a gold ___. | star | stop, car
+3 | We hang a ___ on the tree. | bell | bill, belt
+3 | The elf likes to ___ toys. | make | milk, mask
+3 | Mom made hot cocoa in a ___. | mug | mud, hug
+3 | We sing a song by the ___. | tree | three, free
+3 | I got a gift in a big ___. | box | fox, bus
+4 | It is cold. Ben puts on his ___. | mittens | kittens, muffins
+4 | The reindeer can ___ up in the sky. | fly | fry, flat
+4 | Kim has a red sled. What color is the sled? | red | bed, blue
+4 | The snow is cold and ___. | white | write, while
+4 | We bake ___ for Santa. | cookies | cooking, cooked
+5 | Sam made a snowman. Then the sun came out. What happened to the snowman? | it melted | it ran, it sang
+5 | The tree has lights. The lights are on. Is the tree dark or bright? | bright | dark, bring
+5 | Jen got a puppy for Christmas. What did Jen get? | a puppy | a pony, a penny
+5 | We put the star on top of the ___. | tree | sled, cake
+5 | Dad and I go sledding. We need a ___. | hill | hall, pill`,
+2: `# 2nd grade. The level number comes first (1 = easiest).
+1 | We drank hot cocoa by the warm ___. | fire | fine, five
+1 | The children built a ___ out of snow. | snowman | showman, snowing
+1 | Please ___ the ornaments gently. | hang | hung, hand
+1 | My sister ___ a card for Grandma. | made | mad, maid
+1 | The puppy slept under the ___. | tree | three, true
+2 | The ___ on the tree were twinkling brightly. | lights | lists, nights
+2 | We wrapped the presents in shiny ___. | paper | pepper, piper
+2 | Santa's sleigh is pulled by eight ___. | reindeer | rainbows, raindrops
+2 | I wrote a ___ to Santa asking for a bike. | letter | ladder, litter
+2 | There are ___ candles on the table. | two | too, to
+3 | Icicles were ___ from the edge of the roof. | hanging | hugging, hunting
+3 | Jack ___ his scarf tightly because it was windy. | wrapped | wiped, whipped
+3 | The cookies smelled so ___ that I wanted one. | delicious | dangerous, difficult
+3 | After the storm, the whole yard was ___ with snow. | covered | colored, crowded
+3 | We ___ carols for our neighbors last night. | sang | sing, sung
+4 | The stars ___ in the dark winter sky. | sparkled | sprinkled, spilled
+4 | Grandpa's ___ is long, white, and fluffy. | beard | bread, bird
+4 | My little brother couldn't sleep because he was too ___ about Christmas. | excited | exciting, expected
+4 | Their ___ is decorated with lights and a wreath. | house | horse, mouse
+4 | We have to be quiet, or we will ___ the baby. | wake | walk, week
+5 | Lena put on her boots, coat, and mittens before going outside. What was the weather like? | cold and snowy | hot and sunny, warm and windy
+5 | Max left cookies and milk by the fireplace on Christmas Eve. Who were the cookies for? | Santa | Max, the dog
+5 | The tree fell over because the cat climbed it. Why did the tree fall? | the cat climbed it | it was windy, it was old
+5 | Mia shook the box and heard a jingle. What might be inside? | a bell | a book, a sock
+5 | First we put on the lights. Then we hung the ornaments. What did we do second? | hung the ornaments | put on the lights, ate cookies`
+};
+
+function parseBank(text){
+  const items = []; let skipped = 0;
+  for (const raw of text.split('\n')){
+    const l = raw.trim();
+    if (!l || l.startsWith('#')) continue;
+    const p = l.split('|').map(x => x.trim());
+    const lvl = Number(p[0]);
+    const wrong = (p[3] || '').split(',').map(w => w.trim()).filter(Boolean);
+    if (p.length < 4 || !(lvl >= 1 && lvl <= 5) || !p[1] || !p[2] || !wrong.length){ skipped++; continue; }
+    items.push({ level: lvl, s: p[1], a: p[2], w: wrong.slice(0, 4) });
+  }
+  return { items, skipped };
+}
+
+/* ================================================================== */
+/*  Levels                                                             */
+/* ================================================================== */
+const LEVELS = [
+  { trees: 1, decoys: 0, scale: 1.0,  features: [] },
+  { trees: 2, decoys: 0, scale: 0.85, features: ['height'] },
+  { trees: 2, decoys: 1, scale: 0.8,  features: ['star'] },
+  { trees: 3, decoys: 2, scale: 0.72, features: ['height', 'star'] },
+  { trees: 3, decoys: 2, scale: 0.72, features: ['size', 'star'] },
+];
+const STARS = { gold: 0xffd43b, red: 0xff4d4d, blue: 0x4dabf7, purple: 0xcc5de8 };
+const STAR_KEYS = Object.keys(STARS);
+const ORNAMENT_COLORS = [0xe03131, 0x2f9e44, 0x1971c2, 0xf59f00, 0xae3ec9, 0xe64980, 0x0ca678, 0xfcc419, 0x4263eb, 0xf76707];
+
+/* ================================================================== */
+/*  Saved settings (this browser only)                                 */
+/* ================================================================== */
+const store = {
+  get(k, d){ try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch(e){ return d; } },
+  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
+};
+let readers  = store.get('th.readers', [{name:'', grade:1, level:0, stars:0}, {name:'', grade:2, level:0, stars:0}]);
+let settings = store.get('th.settings', { readAloud: true, music: true });
+let banks    = { 1: store.get('th.bank1', DEFAULT_BANKS[1]), 2: store.get('th.bank2', DEFAULT_BANKS[2]) };
+let currentReader = store.get('th.current', 0);
+const BADGE = ['#2b8a3e', '#c92a2a'];
+
+/* ================================================================== */
+/*  Menu                                                               */
+/* ================================================================== */
+const $ = id => document.getElementById(id);
+function saveReaders(){ store.set('th.readers', readers); store.set('th.current', currentReader); }
+function selectReader(i){ currentReader = i; saveReaders(); $('startLevel').value = String(readers[i].level || 0); renderReaders(); }
+function renderReaders(){
+  const wrap = $('readers'); wrap.innerHTML = '';
+  readers.forEach((r, i) => {
+    const card = document.createElement('div');
+    card.className = 'reader' + (i === currentReader ? ' sel' : '');
+    card.innerHTML = `
+      <div class="top"><div class="badge" style="background:${BADGE[i]}">${i + 1}</div>
+        <input class="name" placeholder="Reader ${i + 1}'s name" maxlength="20"></div>
+      <select class="grade"><option value="1">1st grade sentences</option><option value="2">2nd grade sentences</option></select>
+      <div class="info"></div>`;
+    const name = card.querySelector('.name'); name.value = r.name;
+    name.addEventListener('input', () => { r.name = name.value.trim(); saveReaders(); });
+    const g = card.querySelector('.grade'); g.value = String(r.grade);
+    g.addEventListener('change', () => { r.grade = Number(g.value); saveReaders(); });
+    card.querySelector('.info').textContent = `Reached level ${(r.level || 0) + 1} · ★ ${r.stars} star${r.stars === 1 ? '' : 's'}`;
+    card.addEventListener('click', () => { if (currentReader !== i) selectReader(i); });
+    wrap.appendChild(card);
+  });
+}
+renderReaders();
+$('startLevel').value = String(readers[currentReader].level || 0);
+$('readAloud').checked = settings.readAloud;
+$('readAloud').addEventListener('change', e => { settings.readAloud = e.target.checked; store.set('th.settings', settings); });
+$('music').checked = settings.music;
+$('music').addEventListener('change', e => { settings.music = e.target.checked; store.set('th.settings', settings); });
+
+let editGrade = 1;
+function loadEditor(){ $('bankText').value = banks[editGrade]; $('editStatus').textContent = `${parseBank(banks[editGrade]).items.length} sentences`; }
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === t));
+  editGrade = Number(t.dataset.grade); loadEditor();
+}));
+$('btnSave').addEventListener('click', () => {
+  const text = $('bankText').value, { items, skipped } = parseBank(text);
+  if (!items.length){ $('editStatus').textContent = 'No usable lines yet. Check the format above.'; return; }
+  banks[editGrade] = text; store.set('th.bank' + editGrade, text);
+  $('editStatus').textContent = `Saved ${items.length} sentences` + (skipped ? ` (${skipped} line${skipped > 1 ? 's' : ''} skipped: check the | separators and level numbers)` : '.');
+});
+let resetArmed = false;
+$('btnReset').addEventListener('click', () => {
+  if (!resetArmed){ resetArmed = true; $('btnReset').textContent = 'Click again to confirm'; setTimeout(() => { resetArmed = false; $('btnReset').textContent = 'Restore the original sentences'; }, 3000); return; }
+  resetArmed = false; $('btnReset').textContent = 'Restore the original sentences';
+  banks[editGrade] = DEFAULT_BANKS[editGrade]; store.set('th.bank' + editGrade, DEFAULT_BANKS[editGrade]); loadEditor();
+  $('editStatus').textContent = 'Original sentences restored.';
+});
+loadEditor();
+
+(async () => {
+  let ok = false;
+  try { ok = !!(navigator.xr && await navigator.xr.isSessionSupported('immersive-ar')); } catch(e){}
+  if (!ok){
+    $('xrNote').className = 'note warn';
+    $('xrNote').textContent = 'Headset mode isn\'t available here. On the Quest 3, open this page in the Meta Quest Browser by itself (not inside another site). Preview works anywhere.';
+  } else {
+    $('xrNote').className = 'note';
+    $('xrNote').textContent = 'Tip: stand in the middle of the room. Trees hide all around, so she\'ll need to turn and look behind her.';
+  }
+})();
+
+/* ================================================================== */
+/*  Sound, music, speech                                               */
+/* ================================================================== */
+let audio = null;
+function initAudio(){ try { if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch(e){ audio = null; } }
+function tone(freq, start, dur, type = 'sine', gain = 0.16){
+  if (!audio) return;
+  try {
+    const t0 = audio.currentTime + start, o = audio.createOscillator(), g = audio.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t0);
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(gain, t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g).connect(audio.destination); o.start(t0); o.stop(t0 + dur + 0.05);
+  } catch(e){}
+}
+const N = { C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99, C6: 1046.5 };
+function playTune(notes, beat = 0.22){
+  if (!settings.music) return;
+  let t = 0;
+  for (const [n, len] of notes){ tone(N[n], t, len * beat * 0.95, 'triangle', 0.13); tone(N[n] * 2, t, len * beat * 0.5, 'sine', 0.03); t += len * beat; }
+}
+// "Jingle Bells" (public domain, 1857)
+const JINGLE_A = [['E5',1],['E5',1],['E5',2],['E5',1],['E5',1],['E5',2],['E5',1],['G5',1],['C5',1.5],['D5',0.5],['E5',4]];
+const JINGLE_B = [['F5',1],['F5',1],['F5',1.5],['F5',0.5],['F5',1],['E5',1],['E5',1],['E5',0.5],['E5',0.5],['E5',1],['D5',1],['D5',1],['E5',1],['D5',2],['G5',2]];
+const sfx = {
+  right(){ [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.08, 0.35, 'triangle')); },
+  wrong(){ tone(260, 0, 0.18, 'triangle', 0.12); tone(200, 0.12, 0.25, 'triangle', 0.12); },
+  pick(){ tone(880, 0, 0.12); tone(1320, 0.07, 0.2); },
+  nope(){ tone(330, 0, 0.15, 'square', 0.05); tone(294, 0.12, 0.2, 'square', 0.05); },
+  found(){ if (settings.music) playTune(JINGLE_A); else [784, 988, 1175, 1568].forEach((f, i) => tone(f, i * 0.1, 0.4, 'triangle')); },
+  level(){ if (settings.music) playTune([...JINGLE_A, ...JINGLE_B]); else [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.12, 0.5, 'triangle')); }
+};
+function speak(text){
+  try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text.replace(/_{2,}/g, 'blank')); u.rate = 0.85; speechSynthesis.speak(u); } catch(e){}
+}
+
+/* ================================================================== */
+/*  Scene                                                              */
+/* ================================================================== */
+const stage = $('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local-floor');
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, 1, 0.01, 50);
+camera.rotation.order = 'YXZ';
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.8));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(1, 3, 2); scene.add(sun);
+
+const previewRoom = new THREE.Group();
+previewRoom.add(new THREE.GridHelper(12, 24, 0x9fb39f, 0xc9d6c6));
+scene.add(previewRoom);
+const PREVIEW_BG = new THREE.Color(0xe9efe6);
+
+const world = new THREE.Group(); scene.add(world);
+const fx = new THREE.Group(); scene.add(fx);
+
+function resize(){ const w = innerWidth, h = innerHeight; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+
+/* Text cards -------------------------------------------------------- */
+const FONT = '"Andika", "Comic Sans MS", system-ui, sans-serif';
+function drawCard(words, o){
+  const { font = 72, maxW = 1400, pad = 50, bg = '#fff', fg = '#1f2a24', radius = 40, border = null, borderW = 10, lineGap = 1.35 } = o;
+  const c = document.createElement('canvas'), ctx = c.getContext('2d');
+  const f = `700 ${font}px ${FONT}`; ctx.font = f;
+  const space = ctx.measureText(' ').width, lines = []; let line = [], lw = 0;
+  for (const w of words){
+    if (w.br){ lines.push({ line, lw }); line = []; lw = 0; continue; }
+    const ww = ctx.measureText(w.t).width, add = (line.length ? space : 0) + ww;
+    if (line.length && lw + add > maxW){ lines.push({ line, lw }); line = [w]; lw = ww; } else { line.push(w); lw += add; }
+  }
+  if (line.length) lines.push({ line, lw });
+  const textW = Math.max(...lines.map(l => l.lw), 10), lh = font * lineGap;
+  const W = Math.ceil(textW + pad * 2), H = Math.ceil(pad * 2 + font * 1.2 + (lines.length - 1) * lh);
+  c.width = W; c.height = H;
+  const r = Math.min(radius, H / 2);
+  ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(borderW / 2, borderW / 2, W - borderW, H - borderW, r); else ctx.rect(borderW / 2, borderW / 2, W - borderW, H - borderW);
+  ctx.fillStyle = bg; ctx.fill(); if (border){ ctx.lineWidth = borderW; ctx.strokeStyle = border; ctx.stroke(); }
+  ctx.font = f; ctx.textBaseline = 'middle';
+  lines.forEach((l, i) => {
+    let x = (W - l.lw) / 2; const y = pad + font * 0.62 + i * lh;
+    l.line.forEach((w, j) => {
+      if (j) x += space;
+      ctx.fillStyle = w.color || fg; ctx.fillText(w.t, x, y);
+      if (w.underline) ctx.fillRect(x, y + font * 0.5, ctx.measureText(w.t).width, 6);
+      x += ctx.measureText(w.t).width;
+    });
+  });
+  return { canvas: c, W, H };
+}
+function makeCard(words, o = {}, scale = 0.0007){
+  const { canvas, W, H } = drawCard(words, o);
+  const tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(W * scale, H * scale), new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+  m.userData.w = W * scale; m.userData.h = H * scale; m.renderOrder = 2;
+  return m;
+}
+const words = t => t.split(/\s+/).filter(Boolean).map(t => ({ t }));
+function disposeTree(obj){
+  obj.traverse(o => {
+    if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose();
+    if (o.material){ if (o.material.map) o.material.map.dispose(); if (!o.material.userData.shared) o.material.dispose(); }
+  });
+}
+function removeObj(o){ if (!o) return; if (o.parent) o.parent.remove(o); disposeTree(o); }
+function clearWorld(){ [...world.children].forEach(removeObj); }
+
+/* Helpers ------------------------------------------------------------ */
+const UP = new THREE.Vector3(0, 1, 0);
+const shuffle = a => { a = [...a]; for (let i = a.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const rand = (a, b) => a + Math.random() * (b - a);
+function getHead(){
+  const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
+  const p = new THREE.Vector3(), d = new THREE.Vector3();
+  cam.getWorldPosition(p); cam.getWorldDirection(d);
+  d.y = 0; if (d.lengthSq() < 1e-4) d.set(0, 0, -1); d.normalize();
+  return { p, d };
+}
+function spot(head, angleDeg, dist){
+  const dir = head.d.clone().applyAxisAngle(UP, THREE.MathUtils.degToRad(angleDeg));
+  return new THREE.Vector3(head.p.x + dir.x * dist, 0, head.p.z + dir.z * dist);
+}
+function faceHead(o, head){ o.lookAt(head.p.x, o.position.y, head.p.z); }
+function makePickable(o, kind, extra = {}){
+  Object.assign(o.userData, { pick: true, alive: true, kind, hoverScale: 1.12, baseScale: o.scale.x, ...extra });
+  return o;
+}
+
+/* ================================================================== */
+/*  3D objects: ornaments, trees, sparkles, snow                       */
+/* ================================================================== */
+const sphereGeo = new THREE.SphereGeometry(1, 24, 16); sphereGeo.userData.shared = true;
+const capGeo = new THREE.CylinderGeometry(0.28, 0.28, 0.3, 12); capGeo.userData.shared = true;
+const capMat = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.9, roughness: 0.3 }); capMat.userData.shared = true;
+
+function makeOrnament(color, r){
+  const g = new THREE.Group();
+  const ball = new THREE.Mesh(sphereGeo, new THREE.MeshStandardMaterial({ color, metalness: 0.55, roughness: 0.22, emissive: color, emissiveIntensity: 0.25 }));
+  ball.scale.setScalar(r); g.add(ball);
+  const cap = new THREE.Mesh(capGeo, capMat); cap.scale.setScalar(r); cap.position.y = r * 1.02; g.add(cap);
+  const shine = new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 }));
+  shine.scale.setScalar(r * 0.22); shine.position.set(-r * 0.4, r * 0.4, r * 0.75); g.add(shine);
+  g.userData.ball = ball; g.userData.color = color; g.userData.radius = r * 1.6;
+  return g;
+}
+
+function starShape(outer, inner){
+  const s = new THREE.Shape();
+  for (let i = 0; i < 10; i++){
+    const a = Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? inner : outer;
+    const x = Math.cos(a) * rr, y = Math.sin(a) * rr;
+    i ? s.lineTo(x, y) : s.moveTo(x, y);
+  }
+  s.closePath(); return s;
+}
+const starGeo = new THREE.ExtrudeGeometry(starShape(0.085, 0.036), { depth: 0.025, bevelEnabled: false }); starGeo.center(); starGeo.userData.shared = true;
+const coneGeos = [[0.30, 0.34, 0.25], [0.23, 0.29, 0.45], [0.15, 0.25, 0.63]].map(([r, h, y]) => { const g = new THREE.ConeGeometry(r, h, 18); g.userData.shared = true; return { g, r, h, y }; });
+const trunkGeo = new THREE.CylinderGeometry(0.05, 0.06, 0.14, 10); trunkGeo.userData.shared = true;
+const treeMat = new THREE.MeshStandardMaterial({ color: 0x2f9e44, roughness: 0.8, flatShading: true }); treeMat.userData.shared = true;
+const trunkMat = new THREE.MeshStandardMaterial({ color: 0x7a4b28, roughness: 0.9 }); trunkMat.userData.shared = true;
+const bulbGeo = new THREE.SphereGeometry(0.014, 8, 6); bulbGeo.userData.shared = true;
+const BULB_COLORS = [0xff6b6b, 0xffd43b, 0x74c0fc, 0x8ce99a, 0xf783ac, 0xffa94d];
+
+function conePoint(c, t, ang, push = 1.04){
+  const y = c.y - c.h / 2 + c.h * t, r = c.r * (1 - t) * push;
+  return new THREE.Vector3(Math.cos(ang) * r, y, Math.sin(ang) * r);
+}
+function makeTree(starKey){
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(trunkGeo, trunkMat); trunk.position.y = 0.07; g.add(trunk);
+  for (const c of coneGeos){ const m = new THREE.Mesh(c.g, treeMat); m.position.y = c.y; g.add(m); }
+  const star = new THREE.Mesh(starGeo, new THREE.MeshStandardMaterial({ color: STARS[starKey], emissive: STARS[starKey], emissiveIntensity: 0.6, metalness: 0.4, roughness: 0.3 }));
+  star.position.y = 0.8; g.add(star);
+  const bulbs = [];
+  coneGeos.forEach((c, ci) => {
+    const n = [7, 5, 4][ci];
+    for (let i = 0; i < n; i++){
+      const col = BULB_COLORS[(i + ci) % BULB_COLORS.length];
+      const b = new THREE.Mesh(bulbGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(col).multiplyScalar(0.35) }));
+      b.position.copy(conePoint(c, rand(0.1, 0.55), i / n * Math.PI * 2 + ci));
+      b.userData.col = col; g.add(b); bulbs.push(b);
+    }
+  });
+  g.userData.star = star; g.userData.bulbs = bulbs;
+  return g;
+}
+
+const sparkGeo = new THREE.SphereGeometry(0.012, 8, 6); sparkGeo.userData.shared = true;
+function burst(pos, n = 26, spread = 0.9){
+  for (let i = 0; i < n; i++){
+    const m = new THREE.Mesh(sparkGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(Math.random(), 0.9, 0.65), transparent: true }));
+    m.position.copy(pos);
+    m.userData = { v: new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.9 + 0.1, Math.random() - 0.5).normalize().multiplyScalar(spread * (0.5 + Math.random())), life: 1, kind: 'spark' };
+    fx.add(m);
+  }
+}
+function snow(center, radius, seconds, count = 350){
+  const pos = new Float32Array(count * 3), vel = [];
+  for (let i = 0; i < count; i++){
+    const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * radius;
+    pos[i * 3] = center.x + Math.cos(a) * r; pos[i * 3 + 1] = rand(0, 2.4); pos[i * 3 + 2] = center.z + Math.sin(a) * r;
+    vel.push(rand(0.18, 0.4), rand(0, 6));
+  }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.018, transparent: true, opacity: 0.95, depthWrite: false }));
+  pts.userData = { kind: 'snow', vel, life: seconds, total: seconds, top: 2.4 };
+  fx.add(pts);
+}
+
+/* ================================================================== */
+/*  Game                                                               */
+/* ================================================================== */
+const game = {
+  state: 'menu', level: 0, grade: 1, stars: 0, levelStars: 0,
+  sentences: [], item: null, firstTry: true, busy: false,
+  ornaments: [], trees: [], found: 0, heldColor: null,
+  panel: null, clue: null, clueText: '', speakText: ''
+};
+let mode = 'menu', pendingStart = false, xrFrames = 0;
+const readerName = () => readers[currentReader].name || '';
+
+function sentencesFor(level){
+  const lv = level + 1;
+  let items = parseBank(banks[game.grade]).items.filter(i => i.level === lv);
+  if (!items.length) items = parseBank(DEFAULT_BANKS[game.grade]).items.filter(i => i.level === lv);
+  return shuffle(items);
+}
+
+/* Floating cards ------------------------------------------------------ */
+function setPanel(wordList, opts = {}, angle = 0, dist = 1.25){
+  if (game.panel) removeObj(game.panel);
+  const head = getHead();
+  const p = makeCard(wordList, { font: 76, maxW: 1300, bg: '#fffdf8', border: '#b2f2bb', borderW: 14, radius: 46, ...opts });
+  p.position.copy(spot(head, angle, dist)); p.position.y = Math.max(0.9, head.p.y - 0.02);
+  faceHead(p, head);
+  world.add(p); game.panel = p;
+  return p;
+}
+function addHear(parent, getText, offset){
+  if (!settings.readAloud) return null;
+  const b = makeCard(words('Read it to me'), { font: 46, pad: 22, bg: '#e7f5ff', fg: '#1971c2', border: '#a5d8ff', borderW: 8, radius: 999 });
+  b.position.copy(offset); parent.add(b);
+  makePickable(b, 'hear', { getText, hoverScale: 1.1, base: b.position.clone() });
+  return b;
+}
+function addBubble(text, kind, color, angle, dist, y, extra = {}){
+  const head = getHead();
+  const b = makeCard(words(text), { font: 84, pad: 44, bg: color, fg: '#fff', border: '#fff', borderW: 12, radius: 999, maxW: 1100 }, 0.00075);
+  b.position.copy(spot(head, angle, dist)); b.position.y = y;
+  faceHead(b, head);
+  makePickable(b, kind, { text, base: b.position.clone(), phase: Math.random() * 6, bob: true, faceHead: true, ...extra });
+  world.add(b);
+  return b;
+}
+function setClue(text, color = '#1f2a24'){
+  if (game.clue) removeObj(game.clue);
+  game.clueText = text;
+  const g = new THREE.Group();
+  const isClue = text.startsWith('Clue:');
+  const card = makeCard(isClue ? [{ t: 'Clue:', color: '#c92a2a' }, ...words(text.slice(5))] : words(text).map(w => ({ ...w, color })),
+    { font: 58, maxW: 900, pad: 30, bg: '#fff9db', border: '#ffd43b', borderW: 10, radius: 34 }, 0.0006);
+  g.add(card);
+  addHear(g, () => game.clueText.replace(/^Clue:\s*/, ''), new THREE.Vector3(card.userData.w / 2 + 0.14, 0, 0));
+  const head = getHead();
+  g.position.copy(clueTarget(head));
+  g.lookAt(head.p);
+  g.userData.follow = true;
+  world.add(g); game.clue = g;
+}
+// The clue rides along at the bottom edge of her view, so it never covers the trees.
+const _q = new THREE.Quaternion(), _f = new THREE.Vector3(), _r = new THREE.Vector3();
+function clueTarget(head){
+  const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
+  cam.getWorldQuaternion(_q);
+  _f.set(0, 0, -1).applyQuaternion(_q);
+  _r.set(1, 0, 0).applyQuaternion(_q);
+  _f.applyAxisAngle(_r, -0.5);
+  return head.p.clone().addScaledVector(_f, 0.9);
+}
+
+/* Ornament cloud ---------------------------------------------------- */
+function layoutOrnaments(){
+  const head = getHead();
+  const alive = game.ornaments.filter(o => o.userData.alive);
+  alive.forEach((o, i) => {
+    const angle = -32 - (i % 5) * 9 + rand(-3, 3);
+    const dist = 0.78 + Math.floor(i / 5) * 0.16 + rand(-0.03, 0.03);
+    const pos = spot(head, angle, dist);
+    pos.y = head.p.y - 0.32 + ((i * 37) % 5) * 0.11 + rand(-0.03, 0.03);
+    o.userData.base = pos; o.position.copy(pos);
+  });
+}
+function buildOrnaments(){
+  game.ornaments = shuffle(ORNAMENT_COLORS).map((c, i) => {
+    const o = makeOrnament(c, rand(0.042, 0.056));
+    makePickable(o, 'ornament', { phase: Math.random() * 6, bob: true, spin: rand(0.3, 0.8) * (Math.random() < 0.5 ? -1 : 1) });
+    world.add(o); return o;
+  });
+  layoutOrnaments();
+}
+
+/* Flow ------------------------------------------------------------- */
+function startGame(){
+  const r = readers[currentReader];
+  game.grade = r.grade; game.level = Number($('startLevel').value) || 0; game.stars = 0;
+  showIntro();
+}
+function showIntro(){
+  clearWorld(); game.panel = game.clue = null; game.state = 'intro';
+  const n = readerName();
+  const text = `Hi${n ? ' ' + n : ''}! Pick a sparkly ornament and finish the sentence. You will get a clue. Use the clue to find the Christmas tree!`;
+  game.speakText = text;
+  const p = setPanel(words(text));
+  addHear(p, () => game.speakText, new THREE.Vector3(0.0, -p.userData.h / 2 - 0.06, 0.01));
+  addBubble('Start', 'start', '#c92a2a', 0, 0.95, Math.max(0.6, getHead().p.y - 0.42));
+}
+function startLevel(){
+  clearWorld(); game.panel = game.clue = null;
+  const cfg = LEVELS[game.level];
+  game.sentences = sentencesFor(game.level);
+  game.trees = []; game.found = 0; game.levelStars = 0; game.busy = false;
+  game.state = 'pick';
+  buildOrnaments();
+  const text = `Level ${game.level + 1}! Find ${cfg.trees} tree${cfg.trees > 1 ? 's' : ''}. Pick an ornament.`;
+  game.speakText = text;
+  const p = setPanel(words(text), { border: '#ffc9c9' }, 6, 1.3);
+  addHear(p, () => game.speakText, new THREE.Vector3(0, -p.userData.h / 2 - 0.06, 0.01));
+}
+function pickOrnament(o){
+  if (game.state !== 'pick') return;
+  sfx.pick();
+  burst(o.getWorldPosition(new THREE.Vector3()), 14, 0.5);
+  o.userData.alive = false; o.visible = false;
+  game.heldColor = o.userData.color;
+  const cfg = LEVELS[game.level];
+  game.item = game.sentences.length ? game.sentences[game.found % game.sentences.length] : { s: 'The tree is ___.', a: 'green', w: ['grin', 'gray'] };
+  game.firstTry = true; game.busy = false; game.state = 'question';
+  showQuestion();
+}
+function showQuestion(){
+  const item = game.item;
+  game.speakText = item.s;
+  const p = setPanel(words(item.s.replace(/_{2,}/g, '_____')));
+  addHear(p, () => game.speakText, new THREE.Vector3(0, -p.userData.h / 2 - 0.06, 0.01));
+  const head = getHead();
+  const opts = shuffle([{ t: item.a, ok: true }, ...item.w.map(t => ({ t, ok: false }))]);
+  const n = opts.length, spread = Math.min(76, 34 * (n - 1));
+  const colors = shuffle(['#e03131', '#2f9e44', '#1971c2', '#f08c00', '#ae3ec9']);
+  opts.forEach((o, i) => {
+    const angle = (n === 1 ? 0 : -spread / 2 + spread * i / (n - 1)) + rand(-3, 3);
+    addBubble(o.t, 'option', colors[i % colors.length], angle, rand(0.9, 1.05), Math.max(0.5, head.p.y - 0.42 + rand(0, 0.1)), { correct: o.ok });
+  });
+}
+function completedWords(item){
+  const out = [{ t: pick(['Yes!', 'Great job!', 'You got it!', 'Super reading!']), color: '#2b8a3e' }];
+  const hl = w => ({ ...w, color: '#c92a2a', underline: true });
+  if (/_{2,}/.test(item.s)){
+    const [before, ...rest] = item.s.split(/_{2,}/); const after = rest.join(' ');
+    const ans = words(item.a).map(hl);
+    const m = after.match(/^([^\s]*)(.*)$/);
+    if (m && m[1]) ans[ans.length - 1].t += m[1];
+    out.push(...words(before), ...ans, ...words(m ? m[2] : after));
+  } else out.push({ br: true }, ...words(item.s), { br: true }, ...words(item.a).map(hl));
+  return out;
+}
+function onCorrect(b){
+  game.busy = true;
+  if (game.firstTry){ game.stars++; game.levelStars++; }
+  burst(b.getWorldPosition(new THREE.Vector3()));
+  removeObj(b);
+  world.children.forEach(o => { if (o.userData.kind === 'option'){ o.userData.alive = false; o.userData.fade = true; } });
+  sfx.right();
+  setPanel(completedWords(game.item), { border: '#8ce99a' });
+  setTimeout(() => { if (mode !== 'menu' && game.state === 'question') hideTree(); }, 1800);
+}
+function onWrong(b){
+  game.firstTry = false;
+  b.userData.alive = false; b.userData.shake = 0.5;
+  b.material.color.set(0x9aa5b1); b.material.opacity = 0.55;
+  sfx.wrong();
+}
+
+/* Hide the tree (and fakes) and give the clue ----------------------- */
+function hideTree(){
+  removeObj(game.panel); game.panel = null;
+  const cfg = LEVELS[game.level];
+  const head = getHead();
+  const sector = pick(['left', 'right', 'behind']);
+  const center = { left: 105, right: -105, behind: 180 }[sector];
+  const real = {
+    star: pick(STAR_KEYS),
+    height: cfg.features.includes('height') ? pick(['high', 'low']) : 'low',
+    size: cfg.features.includes('size') ? pick(['big', 'small']) : 'big'
+  };
+  const fakes = [];
+  for (let i = 0; i < cfg.decoys; i++){
+    const d = { ...real }, f = cfg.features[i % cfg.features.length];
+    if (f === 'star') d.star = pick(STAR_KEYS.filter(s => s !== real.star));
+    if (f === 'height') d.height = real.height === 'high' ? 'low' : 'high';
+    if (f === 'size') d.size = real.size === 'big' ? 'small' : 'big';
+    fakes.push(d);
+  }
+  const all = shuffle([{ ...real, real: true }, ...fakes]);
+  const offsets = { 1: [0], 2: [-17, 17], 3: [-34, 0, 34] }[all.length];
+  all.forEach((f, i) => {
+    const t = makeTree(f.star);
+    let s = cfg.scale * (f.size === 'small' ? 0.55 : 1) * (f.height === 'high' ? 0.6 : 1);
+    t.scale.setScalar(s);
+    const pos = spot(head, center + offsets[i] + rand(-4, 4), rand(0.95, 1.2));
+    pos.y = f.height === 'high' ? head.p.y + 0.12 : 0;
+    t.position.copy(pos);
+    faceHead(t, head);
+    makePickable(t, 'tree', { real: !!f.real, hoverScale: 1.06, radius: 0.32 * s, centerY: 0.42 * s, popIn: 0, base: t.position.clone() });
+    t.scale.setScalar(0.001);
+    world.add(t); game.trees.push(t);
+  });
+  game.state = 'seek';
+  setClue('Clue: ' + clueText(sector, real, cfg.features));
+}
+function clueText(sector, f, feats){
+  const g1 = game.grade === 1;
+  const dir = g1 ? { left: 'Look to your left.', right: 'Look to your right.', behind: 'Turn around and look behind you.' }[sector]
+                 : { left: 'Turn to your left.', right: 'Turn to your right.', behind: 'Turn all the way around.' }[sector];
+  if (!feats.length) return g1 ? `${dir} Find the Christmas tree!` : `${dir} The Christmas tree is hiding there.`;
+  const adj = feats.includes('size') ? f.size + ' ' : '';
+  if (g1){
+    const where = feats.includes('height') ? (f.height === 'high' ? ' up high' : ' down low') : '';
+    const star = feats.includes('star') ? ` with a ${f.star} star` : '';
+    return `${dir} Find the ${adj}tree${where}${star}.`;
+  }
+  const parts = [];
+  if (feats.includes('height')) parts.push(f.height === 'high' ? 'is up high' : 'is down low');
+  if (feats.includes('star')) parts.push(`has a ${f.star} star`);
+  return `${dir} Look for the ${adj}tree that ${parts.join(' and ')}.`;
+}
+function tapTree(t){
+  if (game.state !== 'seek' || t.userData.found) return;
+  if (!t.userData.real){
+    t.userData.shake = 0.5; sfx.nope();
+    const keep = game.clueText;
+    setClue('Not that one. Read your clue again!', '#c92a2a');
+    setTimeout(() => { if (game.state === 'seek') setClue(keep); }, 1800);
+    return;
+  }
+  // Found it!
+  t.userData.found = true; t.userData.alive = false;
+  game.found++;
+  const top = t.localToWorld(new THREE.Vector3(0, 0.8, 0));
+  burst(top, 40, 1.1);
+  snow(t.getWorldPosition(new THREE.Vector3()), 0.9, 6, 220);
+  sfx.found();
+  // hang her ornament on the tree
+  const orn = makeOrnament(game.heldColor, 0.032);
+  orn.position.copy(conePoint(pick(coneGeos), rand(0.15, 0.45), Math.random() * Math.PI * 2, 1.12));
+  orn.scale.setScalar(0.001); orn.userData.popIn = 0; orn.userData.hung = true;
+  t.add(orn);
+  // fakes disappear
+  game.trees.forEach(o => { if (o !== t && !o.userData.found){ o.userData.alive = false; o.userData.vanish = true; burst(o.localToWorld(new THREE.Vector3(0, 0.4, 0)), 10, 0.4); } });
+  game.trees = game.trees.filter(o => o === t || o.userData.found);
+  const cfg = LEVELS[game.level];
+  if (game.found >= cfg.trees){
+    game.state = 'levelDone';
+    setTimeout(levelComplete, 2600);
+  } else {
+    game.state = 'pick';
+    setClue('You found it! Pick another ornament.', '#2b8a3e');
+    layoutOrnaments();
+    burst(game.ornaments.find(o => o.userData.alive)?.position.clone() || top, 20, 0.6);
+  }
+}
+function levelComplete(){
+  if (mode === 'menu') return;
+  if (game.clue){ removeObj(game.clue); game.clue = null; }
+  game.ornaments.forEach(o => { o.userData.alive = false; o.visible = false; });
+  const r = readers[currentReader];
+  const last = game.level >= LEVELS.length - 1;
+  r.level = Math.max(r.level || 0, last ? game.level : game.level + 1);
+  r.stars += game.levelStars; saveReaders(); renderReaders();
+  $('startLevel').value = String(r.level);
+  const head = getHead();
+  snow(head.p, 2.2, 9, 500);
+  sfx.level();
+  const n = readerName();
+  const cfg = LEVELS[game.level];
+  const text = last
+    ? `You found every tree${n ? ', ' + n : ''}! Merry Christmas!`
+    : `Level ${game.level + 1} complete! You found ${cfg.trees} tree${cfg.trees > 1 ? 's' : ''}.`;
+  game.speakText = text;
+  const p = setPanel([...words(text), { br: true }, { t: '★'.repeat(Math.max(1, game.levelStars)), color: '#f59f00' }], { border: '#ffe066' });
+  addHear(p, () => game.speakText, new THREE.Vector3(0, -p.userData.h / 2 - 0.06, 0.01));
+  const y = Math.max(0.55, head.p.y - 0.45);
+  if (last){
+    addBubble('Play again', 'again', '#1971c2', 18, 1.0, y);
+    addBubble('All done', 'done', '#2b8a3e', -18, 1.0, y);
+  } else {
+    addBubble('Next level', 'next', '#c92a2a', 14, 1.0, y);
+    addBubble('All done', 'done', '#2b8a3e', -20, 1.0, y);
+  }
+  game.state = 'levelMenu';
+}
+function activate(o){
+  const u = o.userData;
+  if (!u.pick || !u.alive) return;
+  switch (u.kind){
+    case 'start': sfx.pick(); startLevel(); break;
+    case 'hear': speak(u.getText()); u.shake = 0.25; break;
+    case 'ornament': pickOrnament(o); break;
+    case 'option': if (game.busy) return; u.correct ? onCorrect(o) : onWrong(o); break;
+    case 'tree': tapTree(o); break;
+    case 'next': game.level++; startLevel(); break;
+    case 'again': game.level = 0; startLevel(); break;
+    case 'done': exitGame(); break;
+  }
+}
+
+/* ================================================================== */
+/*  Input                                                              */
+/* ================================================================== */
+const raycaster = new THREE.Raycaster();
+const tmpMat = new THREE.Matrix4();
+function pickRoots(){
+  const out = [];
+  world.traverse(o => { if (o.userData.pick && o.userData.alive && o.visible && (o.userData.kind !== 'ornament' || game.state === 'pick')) out.push(o); });
+  return out;
+}
+function rootOf(o){ while (o && !o.userData.pick) o = o.parent; return o; }
+function hitFromRay(){
+  const hits = raycaster.intersectObjects(pickRoots(), true);
+  for (const h of hits){ const r = rootOf(h.object); if (r && r.userData.alive) return { object: r, point: h.point, distance: h.distance }; }
+  return null;
+}
+const controllers = [];
+for (let i = 0; i < 2; i++){
+  const c = renderer.xr.getController(i);
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75 }));
+  line.scale.z = 3; c.add(line);
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.012, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  dot.visible = false; scene.add(dot);
+  c.userData = { line, dot, inside: null, connected: false };
+  c.visible = false;
+  c.addEventListener('connected', () => { c.userData.connected = true; c.visible = true; });
+  c.addEventListener('disconnected', () => { c.userData.connected = false; c.visible = false; dot.visible = false; });
+  c.addEventListener('select', () => { const h = rayHit(c); if (h) activate(h.object); });
+  scene.add(c); controllers.push(c);
+}
+function rayHit(c){
+  tmpMat.identity().extractRotation(c.matrixWorld);
+  raycaster.ray.origin.setFromMatrixPosition(c.matrixWorld);
+  raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tmpMat);
+  return hitFromRay();
+}
+const v1 = new THREE.Vector3(), v2 = new THREE.Vector3();
+function pokeCheck(c){
+  const p = v1.setFromMatrixPosition(c.matrixWorld);
+  let inside = null;
+  for (const o of pickRoots()){
+    const u = o.userData;
+    if (u.w){
+      v2.copy(p); o.worldToLocal(v2);
+      if (Math.abs(v2.x) < u.w / 2 && Math.abs(v2.y) < u.h / 2 && Math.abs(v2.z) < 0.07){ inside = o; break; }
+    } else if (u.radius){
+      o.getWorldPosition(v2); v2.y += u.centerY || 0;
+      if (v2.distanceTo(p) < u.radius){ inside = o; break; }
+    }
+  }
+  if (inside && inside !== c.userData.inside) activate(inside);
+  c.userData.inside = inside;
+}
+
+let drag = null, mouseHover = null;
+const ndc = new THREE.Vector2();
+function mouseHit(e){
+  ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  return hitFromRay();
+}
+const cv = renderer.domElement;
+cv.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, moved: false }; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointermove', e => {
+  if (mode !== 'preview') return;
+  if (drag){
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+    if (drag.moved){ camera.rotation.y += dx * 0.004; camera.rotation.x = THREE.MathUtils.clamp(camera.rotation.x + dy * 0.004, -1.3, 1.3); drag.x = e.clientX; drag.y = e.clientY; }
+  } else { const h = mouseHit(e); mouseHover = h ? h.object : null; cv.style.cursor = h ? 'pointer' : 'grab'; }
+});
+cv.addEventListener('pointerup', e => { if (mode === 'preview' && drag && !drag.moved){ const h = mouseHit(e); if (h) activate(h.object); } drag = null; });
+
+/* ================================================================== */
+/*  Start / stop                                                       */
+/* ================================================================== */
+function showStage(on, isPreview){
+  $('menu').style.display = on ? 'none' : '';
+  stage.style.display = on ? 'block' : 'none';
+  $('stageBar').style.display = on && isPreview ? 'flex' : 'none';
+  resize();
+}
+function startPreview(){
+  initAudio(); mode = 'preview';
+  scene.background = PREVIEW_BG; previewRoom.visible = true;
+  camera.position.set(0, 1.2, 0); camera.rotation.set(0, 0, 0);
+  showStage(true, true); startGame();
+}
+async function startXR(){
+  initAudio();
+  if (!navigator.xr){ $('xrNote').className = 'note warn'; $('xrNote').textContent = 'This browser has no VR/MR support. Open this page in the Meta Quest Browser on the headset.'; return; }
+  try {
+    const session = await navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['local-floor'], optionalFeatures: ['hand-tracking'] });
+    session.addEventListener('end', onSessionEnd);
+    await renderer.xr.setSession(session);
+    mode = 'xr'; scene.background = null; previewRoom.visible = false; renderer.setClearColor(0x000000, 0);
+    showStage(true, false); clearWorld(); xrFrames = 0; pendingStart = true;
+  } catch(e){
+    $('xrNote').className = 'note warn';
+    $('xrNote').textContent = 'Couldn\'t start headset mode (' + (e.message || e.name) + '). Make sure this page is open in the Meta Quest Browser by itself.';
+  }
+}
+function stopAll(){ try { speechSynthesis.cancel(); } catch(e){} mode = 'menu'; game.state = 'menu'; clearWorld(); [...fx.children].forEach(removeObj); showStage(false); renderReaders(); }
+function onSessionEnd(){ stopAll(); }
+function exitGame(){ if (renderer.xr.isPresenting){ renderer.xr.getSession().end(); return; } stopAll(); }
+$('btnXR').addEventListener('click', startXR);
+$('btnPreview').addEventListener('click', startPreview);
+$('btnBack').addEventListener('click', exitGame);
+
+/* ================================================================== */
+/*  Frame loop                                                         */
+/* ================================================================== */
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  if (mode === 'menu') return;
+  const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
+  if (mode === 'xr' && pendingStart && ++xrFrames > 30){ pendingStart = false; startGame(); }
+  const head = getHead();
+
+  const hovered = new Set();
+  if (mode === 'xr'){
+    for (const c of controllers){
+      if (!c.userData.connected) continue;
+      const h = rayHit(c);
+      c.userData.line.scale.z = h ? h.distance : 3;
+      c.userData.dot.visible = !!h; if (h) c.userData.dot.position.copy(h.point);
+      if (h) hovered.add(h.object);
+      pokeCheck(c);
+    }
+  } else if (mouseHover) hovered.add(mouseHover);
+
+  world.traverse(o => {
+    const u = o.userData;
+    if (u.follow){
+      const target = clueTarget(head);
+      o.position.lerp(target, 1 - Math.pow(0.02, dt));
+      o.lookAt(head.p);
+    }
+    if (u.base){
+      o.position.copy(u.base);
+      if (u.bob) o.position.y += Math.sin(t * 1.6 + (u.phase || 0)) * 0.02;
+    }
+    if (u.faceHead) faceHead(o, head);
+    if (u.spin) o.rotation.y += u.spin * dt;
+    if (u.ball) u.ball.material.emissiveIntensity = 0.2 + 0.25 * (0.5 + 0.5 * Math.sin(t * 3 + (u.phase || 0)));
+    if (u.shake > 0){ u.shake -= dt; o.position.x += Math.sin(t * 60) * 0.02 * Math.min(1, u.shake * 4); }
+    if (u.popIn !== undefined && u.popIn < 1){
+      u.popIn = Math.min(1, u.popIn + dt * 2.5);
+      const e = 1 - Math.pow(1 - u.popIn, 3);
+      o.scale.setScalar(Math.max(0.001, (u.baseScale || 1) * e));
+    } else if (u.pick && u.baseScale && !u.vanish){
+      const target = (hovered.has(o) && u.alive ? u.hoverScale : 1) * u.baseScale;
+      o.scale.setScalar(THREE.MathUtils.lerp(o.scale.x, target, 1 - Math.pow(0.001, dt)));
+    }
+    if (u.found){
+      u.star.rotation.y += dt * 2;
+      u.bulbs.forEach((b, i) => b.material.color.setHSL(((t * 0.4) + i * 0.13) % 1, 0.9, 0.55 + 0.15 * Math.sin(t * 6 + i)));
+    }
+  });
+  for (const o of [...world.children]){
+    const u = o.userData;
+    if (u.fade){ o.material.opacity = Math.max(0, o.material.opacity - dt * 2.5); if (o.material.opacity <= 0) removeObj(o); }
+    if (u.vanish){ const s = o.scale.x - dt * 2 * (u.baseScale || 1); if (s <= 0.01) removeObj(o); else o.scale.setScalar(s); }
+  }
+
+  for (const m of [...fx.children]){
+    const u = m.userData;
+    if (u.kind === 'spark'){
+      u.life -= dt * 1.4; u.v.y -= dt * 1.2;
+      m.position.addScaledVector(u.v, dt); m.material.opacity = Math.max(0, u.life);
+      if (u.life <= 0) removeObj(m);
+    } else if (u.kind === 'snow'){
+      u.life -= dt;
+      const pos = m.geometry.attributes.position;
+      for (let i = 0; i < pos.count; i++){
+        let y = pos.getY(i) - u.vel[i * 2] * dt;
+        if (y < 0) y = u.life > 1.5 ? u.top : -1;
+        pos.setY(i, y);
+        pos.setX(i, pos.getX(i) + Math.sin(t * 1.3 + u.vel[i * 2 + 1]) * 0.05 * dt);
+      }
+      pos.needsUpdate = true;
+      m.material.opacity = Math.min(0.95, u.life / 1.5);
+      if (u.life <= 0) removeObj(m);
+    }
+  }
+  renderer.render(scene, camera);
+});
+document.fonts && document.fonts.load('700 72px "Andika"').catch(() => {});
+</script>
+</body>
+</html>
